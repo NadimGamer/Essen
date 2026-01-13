@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Tracker AI Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+    <style>
+        :root { --primary: #007aff; --bg: #121212; --card: #1e1e1e; --kh: #00ccff; --p: #00ff88; --f: #ffcc00; }
+        body { background: var(--bg); color: white; font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 15px; }
+        
+        /* Dashboard mit Kreisen */
+        .stats-container { display: flex; justify-content: space-around; padding: 20px; background: var(--card); border-radius: 25px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .macro-box { position: relative; width: 85px; }
+        svg { transform: rotate(-90deg); width: 80px; height: 80px; }
+        circle { fill: none; stroke-width: 6; stroke-linecap: round; }
+        .bg-circle { stroke: #333; }
+        .progress-circle { stroke-dasharray: 226; stroke-dashoffset: 226; transition: 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+        .circle-text { position: absolute; top: 28px; left: 0; width: 100%; font-weight: bold; font-size: 14px; }
+        .label { font-size: 10px; color: #888; margin-top: 5px; }
+
+        /* Eingabebereich */
+        .controls { background: var(--card); padding: 20px; border-radius: 25px; margin-bottom: 20px; }
+        .input-group { display: flex; justify-content: center; gap: 8px; margin-bottom: 15px; }
+        input { width: 65px; padding: 12px; background: #2a2a2a; color: white; border: none; border-radius: 12px; text-align: center; font-size: 16px; }
+        button { border: none; padding: 15px; border-radius: 15px; font-weight: bold; width: 100%; margin: 5px 0; color: white; cursor: pointer; transition: opacity 0.2s; }
+        button:active { opacity: 0.7; }
+        .btn-main { background: var(--primary); }
+        .btn-gemini { background: #5856d6; }
+
+        /* Inspiration Card (Kitchen Stories Style) */
+        .section-title { text-align: left; font-size: 1.1rem; margin: 15px 5px; color: #888; display: flex; justify-content: space-between; }
+        .inspiration-card { 
+            background: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.9)), url('https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800');
+            background-size: cover; background-position: center;
+            border-radius: 20px; height: 180px; display: flex; flex-direction: column; justify-content: flex-end; 
+            padding: 20px; text-align: left; margin: 5px; border: 1px solid #333;
+        }
+        #inspiTitle { font-size: 1.2rem; font-weight: bold; margin-bottom: 5px; color: white; }
+        #inspiDesc { font-size: 0.85rem; color: #ccc; line-height: 1.2; }
+
+        #interactive.viewport { width: 100%; height: 200px; border-radius: 20px; overflow: hidden; display: none; margin-bottom: 10px; border: 2px solid var(--primary); }
+    </style>
+</head>
+<body>
+
+    <div class="stats-container">
+        <div class="macro-box">
+            <svg><circle class="bg-circle" cx="40" cy="40" r="36"></circle><circle id="ringKH" class="progress-circle" style="stroke: var(--kh);" cx="40" cy="40" r="36"></circle></svg>
+            <div class="circle-text" id="txtKH">0%</div>
+            <div class="label">KH</div>
+            <div style="font-size: 10px; color: #666;"><span id="valKH">0</span>g / <span id="maxKH">250</span>g</div>
+        </div>
+        <div class="macro-box">
+            <svg><circle class="bg-circle" cx="40" cy="40" r="36"></circle><circle id="ringProt" class="progress-circle" style="stroke: var(--p);" cx="40" cy="40" r="36"></circle></svg>
+            <div class="circle-text" id="txtProt">0%</div>
+            <div class="label">PROT</div>
+            <div style="font-size: 10px; color: #666;"><span id="valProt">0</span>g / <span id="maxProt">150</span>g</div>
+        </div>
+        <div class="macro-box">
+            <svg><circle class="bg-circle" cx="40" cy="40" r="36"></circle><circle id="ringFat" class="progress-circle" style="stroke: var(--f);" cx="40" cy="40" r="36"></circle></svg>
+            <div class="circle-text" id="txtFat">0%</div>
+            <div class="label">FETT</div>
+            <div style="font-size: 10px; color: #666;"><span id="valFat">0</span>g / <span id="maxFat">70</span>g</div>
+        </div>
+    </div>
+
+    <div id="interactive" class="viewport"></div>
+
+    <div class="controls">
+        <div class="input-group">
+            <input type="number" id="inCarbs" placeholder="KH">
+            <input type="number" id="inProt" placeholder="Prot">
+            <input type="number" id="inFat" placeholder="Fett">
+        </div>
+        <button class="btn-main" onclick="addValues()">➕ Mahlzeit eintragen</button>
+        <button class="btn-gemini" id="snapBtn" onclick="startGeminiScan()">📸 Scan & Analyse</button>
+    </div>
+
+    <div class="section-title">Inspiration <span style="color:var(--p); font-size: 0.8em;">für dich</span></div>
+    <div class="inspiration-card" id="inspiCard">
+        <div id="inspiTitle">Berechne Empfehlung...</div>
+        <div id="inspiDesc">Basierend auf deinen restlichen Makros und der Uhrzeit.</div>
+    </div>
+
+    <div style="margin-top: 30px; padding: 15px; background: #1a1a1a; border-radius: 15px;">
+        <span style="color: #666; font-size: 0.8em;">Tagesziele anpassen (g):</span><br>
+        KH: <input type="number" id="goalCarbs" value="250" onchange="updateUI()"> 
+        P: <input type="number" id="goalProt" value="150" onchange="updateUI()"> 
+        F: <input type="number" id="goalFat" value="70" onchange="updateUI()">
+        <br>
+        <button onclick="resetDay()" style="background: #333; width: auto; padding: 8px 15px; font-size: 12px; margin-top: 10px;">Tag zurücksetzen</button>
+    </div>
+
+<script>
+    // Dein API Key
+    const API_KEY = 'AIzaSyDofDSMRPzdWV5IAenQcd6pZp9sf4f8-BY';
+
+    // 1. DYNAMISCHE INSPIRATION (Kitchen Stories Logik)
+    async function updateAIInspiration() {
+        const hour = new Date().getHours();
+        const khOffen = (parseInt(document.getElementById('goalCarbs').value) || 250) - (parseInt(document.getElementById('valKH').innerText) || 0);
+        const pOffen = (parseInt(document.getElementById('goalProt').value) || 150) - (parseInt(document.getElementById('valProt').innerText) || 0);
+        const fOffen = (parseInt(document.getElementById('goalFat').value) || 70) - (parseInt(document.getElementById('valFat').innerText) || 0);
+
+        // Der Prompt für Gemini
+        const prompt = `Es ist ${hour} Uhr. Ich habe heute noch ${khOffen}g Kohlenhydrate, ${pOffen}g Protein und ${fOffen}g Fett übrig. 
+        Schlage mir EIN konkretes, gesundes Gericht im Stil von Kitchen Stories vor, das jetzt ideal ist.
+        Antworte NUR als JSON: {"titel": "Gerichtname", "grund": "Kurze Erklärung", "suche": "Ein englisches Wort für das Bild"}`;
+
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${API_KEY}`, {
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+            const d = await res.json();
+            const result = JSON.parse(d.candidates[0].content.parts[0].text.match(/\{.*\}/s)[0]);
+            
+            document.getElementById('inspiTitle').innerText = result.titel;
+            document.getElementById('inspiDesc').innerText = result.grund;
+            
+            // Neues Zufallsbild passend zum Thema
+            const randomId = Math.floor(Math.random() * 1000);
+            document.getElementById('inspiCard').style.backgroundImage = `linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.9)), url('https://loremflickr.com/800/600/food,cooking?sig=${randomId}')`;
+        } catch (e) {
+            document.getElementById('inspiTitle').innerText = "Protein Snack";
+            document.getElementById('inspiDesc').innerText = "Perfekt um den Tag gesund abzuschließen.";
+        }
+    }
+
+    // 2. HAUPTFUNKTIONEN
+    function updateUI() {
+        const full = 226; // Umfang des Kreises
+        const configs = [
+            ['KH', 'goalCarbs', 'ringKH', 'valKH'],
+            ['Prot', 'goalProt', 'ringProt', 'valProt'],
+            ['Fat', 'goalFat', 'ringFat', 'valFat']
+        ];
+
+        configs.forEach(m => {
+            const current = parseInt(document.getElementById(m[3]).innerText) || 0;
+            const goal = parseInt(document.getElementById(m[1]).value) || 1;
+            let percent = (current / goal) * 100;
+            
+            // Texte aktualisieren
+            document.getElementById(`txt${m[0]}`).innerText = Math.round(percent) + "%";
+            document.getElementById(`max${m[0]}`).innerText = goal;
+            
+            // Ring füllen (Max 100% visuell)
+            const visualPercent = Math.min(percent, 100);
+            document.getElementById(m[2]).style.strokeDashoffset = full - (visualPercent / 100) * full;
+        });
+        saveData();
+    }
+
+    function addValues() {
+        // Werte aus Inputs holen und addieren
+        const inC = parseInt(document.getElementById('inCarbs').value) || 0;
+        const inP = parseInt(document.getElementById('inProt').value) || 0;
+        const inF = parseInt(document.getElementById('inFat').value) || 0;
+
+        document.getElementById('valKH').innerText = (parseInt(document.getElementById('valKH').innerText) || 0) + inC;
+        document.getElementById('valProt').innerText = (parseInt(document.getElementById('valProt').innerText) || 0) + inP;
+        document.getElementById('valFat').innerText = (parseInt(document.getElementById('valFat').innerText) || 0) + inF;
+
+        // Inputs leeren
+        document.getElementById('inCarbs').value = '';
+        document.getElementById('inProt').value = '';
+        document.getElementById('inFat').value = '';
+
+        updateUI();
+        updateAIInspiration(); 
+    }
+
+    async function startGeminiScan() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        
+        input.onchange = async (e) => {
+            const btn = document.getElementById('snapBtn');
+            btn.innerText = "⌛ Analysiere...";
+            const reader = new FileReader();
+            reader.readAsDataURL(e.target.files[0]);
+            reader.onload = async () => {
+                const base64 = reader.result.split(',')[1];
+                try {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${API_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [
+                                { text: "Analysiere dieses Essen. Gib NUR JSON zurück: {'kh': zahl, 'p': zahl, 'f': zahl}" },
+                                { inline_data: { mime_type: "image/jpeg", data: base64 } }
+                            ]}]
+                        })
+                    });
+                    const d = await res.json();
+                    const m = JSON.parse(d.candidates[0].content.parts[0].text.match(/\{.*\}/s)[0]);
+                    
+                    document.getElementById('inCarbs').value = m.kh;
+                    document.getElementById('inProt').value = m.p;
+                    document.getElementById('inFat').value = m.f;
+                    
+                    addValues();
+                } catch (err) {
+                    alert("Scan fehlgeschlagen. Bitte manuell eingeben.");
+                } finally {
+                    btn.innerText = "📸 Scan & Analyse";
+                }
+            };
+        };
+        input.click();
+    }
+
+    function saveData() {
+        const d = {
+            c: document.getElementById('valKH').innerText,
+            p: document.getElementById('valProt').innerText,
+            f: document.getElementById('valFat').innerText,
+            gc: document.getElementById('goalCarbs').value,
+            gp: document.getElementById('goalProt').value,
+            gf: document.getElementById('goalFat').value
+        };
+        localStorage.setItem('macroData', JSON.stringify(d));
+    }
+
+    function resetDay() {
+        if(confirm("Alle Werte auf Null setzen?")) {
+            document.getElementById('valKH').innerText = 0;
+            document.getElementById('valProt').innerText = 0;
+            document.getElementById('valFat').innerText = 0;
+            updateUI();
+            updateAIInspiration();
+        }
+    }
+
+    window.onload = () => {
+        const s = JSON.parse(localStorage.getItem('macroData'));
+        if(s) { 
+            document.getElementById('valKH').innerText = s.c;
+            document.getElementById('valProt').innerText = s.p;
+            document.getElementById('valFat').innerText = s.f; 
+            document.getElementById('goalCarbs').value = s.gc;
+            document.getElementById('goalProt').value = s.gp;
+            document.getElementById('goalFat').value = s.gf; 
+        }
+        updateUI();
+        updateAIInspiration();
+    };
+</script>
+</body>
+</html>
